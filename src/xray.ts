@@ -57,8 +57,8 @@ export async function resolveKeys(keys: string[], kind: IssueKind): Promise<Map<
     const chunk = unique.slice(i, i + 100);
     const op = LIST_QUERY[kind];
     const data = await gql<Record<string, { results: JiraRef[] }>>(
-      `query($jql: [String]!, $limit: Int!) { ${op}(jql: $jql, limit: $limit) { results { issueId jira(fields: ["key"]) } } }`,
-      { jql: [`key in (${chunk.join(",")})`], limit: chunk.length },
+      `query($jql: String!, $limit: Int!) { ${op}(jql: $jql, limit: $limit) { results { issueId jira(fields: ["key"]) } } }`,
+      { jql: `key in (${chunk.join(",")})`, limit: chunk.length },
     );
     for (const r of data[op].results) map.set(r.jira.key.toUpperCase(), r.issueId);
   }
