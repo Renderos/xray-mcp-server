@@ -12,11 +12,11 @@ Code comments and tool descriptions are in Spanish; match that style when editin
 
 ```bash
 npm install
-cp .env.example .env        # fill in XRAY_CLIENT_ID, XRAY_CLIENT_SECRET, MCP_ACCESS_TOKEN
+cp .env.example .env        # all vars optional; no Xray credentials here
 npm run dev                  # tsc build + run with .env loaded
 npm run build                # tsc only -> dist/
 npm start                    # run compiled dist/index.js (no .env loading)
-npx @modelcontextprotocol/inspector   # test against http://localhost:3000/mcp/<MCP_ACCESS_TOKEN>
+npx @modelcontextprotocol/inspector   # http://localhost:3000/mcp, OAuth with your Xray client_id/secret
 ```
 
 There is no test suite or linter configured. `tsc` (`strict: true`) is the only correctness check — run `npm run build` after changes to catch type errors.
@@ -25,9 +25,9 @@ There is no test suite or linter configured. `tsc` (`strict: true`) is the only 
 
 Three files, each with a distinct responsibility:
 
-- **`src/index.ts`** — Express app and HTTP/auth layer. Auth accepts the token either as a path param (`/mcp/<token>`, for Claude's custom-connector UI) or as a `Bearer` header, compared with `timingSafeEqual`. The server is **stateless per request**: `createServer()` builds a fresh `McpServer` + `StreamableHTTPServerTransport` (`sessionIdGenerator: undefined`) for every POST to `/mcp` or `/mcp/:token`, and both are closed when the response closes. Don't add cross-request state here (e.g. sessions, in-memory caches keyed by connection) — it won't work with this model.
+- **`src/index.ts`** — Express app, HTTP layer and a minimal stateless OAuth 2.1 authorization server. **No Xray credentials live on the server**: the user enters their Xray API key as the connector's OAuth Client ID/Secret; `/token` (authorization_code + PKCE S256, or refresh_token) exchanges them with Xray and returns the Xray JWT itself as `access_token`. The auth code is just base64url JSON carrying the PKCE challenge (not secret — useless without a valid client_secret); refresh tokens are opaque since refresh re-authenticates with the credentials the client resends. `/mcp` requires `Bearer <Xray JWT>` (only `exp` is checked locally; Xray verifies the signature) and answers 401 with `WWW-Authenticate: ... resource_metadata=...` otherwise. The server is **stateless per request**: `createServer()` builds a fresh `McpServer` + `StreamableHTTPServerTransport` (`sessionIdGenerator: undefined`) for every POST to `/mcp`, and both are closed when the response closes. Don't add cross-request state here (e.g. sessions, in-memory caches keyed by connection) — it won't work with this model.
 
-- **`src/xray.ts`** — Xray Cloud client: JWT auth (cached in-module for ~23h, transparently re-authenticated on a 401), a single `gql()` helper wrapping the GraphQL endpoint, and Jira-key → Xray `issueId` resolution (`resolveKey`/`resolveKeys`, batched 100 at a time via JQL `key in (...)`). All tools go through `gql()`; there's no REST fallback.
+- **`src/xray.ts`** — Xray Cloud client: `authenticate()` (credentials → JWT, nothing cached), a single `gql()` helper wrapping the GraphQL endpoint that reads the request's JWT from `AsyncLocalStorage` (set by `withXrayToken` in `index.ts`, so tools need no token plumbing), and Jira-key → Xray `issueId` resolution (`resolveKey`/`resolveKeys`, batched 100 at a time via JQL `key in (...)`). All tools go through `gql()`; there's no REST fallback.
 
 - **`src/tools.ts`** — All MCP tool definitions via `registerTools(server)`, called once per request-scoped server in `index.ts`. Conventions to follow when adding a tool:
   - Every user-facing test/plan/execution parameter is a Jira key (`key()`/`keys()` zod helpers validate `PROJECT-123` format); tools resolve keys to Xray `issueId`s internally via `resolveKey`/`resolveKeys` — never expose raw Xray IDs as inputs.
@@ -38,7 +38,8 @@ Three files, each with a distinct responsibility:
 
 ## Environment variables
 
-- `XRAY_CLIENT_ID`, `XRAY_CLIENT_SECRET` — Xray API key, server-side only.
-- `MCP_ACCESS_TOKEN` — must be ≥32 chars (the process exits at startup otherwise); this token is the only auth for the endpoint, so treat the deployed URL containing it as a secret.
-- `XRAY_BASE_URL` (optional) — region override, e.g. `https://eu.xray.cloud.getxray.app`; defaults to the global endpoint.
+All optional; there are intentionally no secrets in the server environment.
+- `XRAY_BASE_URL` — region override, e.g. `https://eu.xray.cloud.getxray.app`; defaults to the global endpoint.
+- `PUBLIC_URL` — public base URL for OAuth metadata, if it can't be derived from the request (`trust proxy` is on).
+- `OAUTH_REDIRECT_URIS` — extra allowed redirect URIs (comma-separated); claude.ai/claude.com callbacks and `http://localhost` are always allowed.
 - `PORT` (optional, default 3000).

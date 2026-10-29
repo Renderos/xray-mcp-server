@@ -1,38 +1,57 @@
-// Cliente de Xray Cloud: autenticación (JWT cacheado) + GraphQL + resolución de keys.
+// Cliente de Xray Cloud: autenticación + GraphQL + resolución de keys.
+// Las credenciales NO viven en el servidor: el usuario las entrega vía OAuth (ver index.ts)
+// y cada request trae su propio JWT de Xray, que se propaga con AsyncLocalStorage.
+import { AsyncLocalStorage } from "node:async_hooks";
+
 const BASE = (process.env.XRAY_BASE_URL ?? "https://xray.cloud.getxray.app").replace(/\/$/, "");
 const TIMEOUT_MS = 30_000;
 
-let cached: { token: string; exp: number } | null = null;
+const requestToken = new AsyncLocalStorage<string>();
 
-async function getToken(): Promise<string> {
-  if (cached && Date.now() < cached.exp) return cached.token;
-  const client_id = process.env.XRAY_CLIENT_ID;
-  const client_secret = process.env.XRAY_CLIENT_SECRET;
-  if (!client_id || !client_secret) throw new Error("Faltan XRAY_CLIENT_ID / XRAY_CLIENT_SECRET en el servidor.");
+// Ejecuta fn con el JWT de Xray del request actual disponible para gql().
+export function withXrayToken<T>(token: string, fn: () => T): T {
+  return requestToken.run(token, fn);
+}
+
+// Canjea client_id/client_secret de Xray por un JWT (~24 h). No guarda nada.
+export async function authenticate(client_id: string, client_secret: string): Promise<string> {
   const res = await fetch(`${BASE}/api/v2/authenticate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ client_id, client_secret }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
+  if (res.status === 401) throw new InvalidCredentialsError();
   if (!res.ok) throw new Error(`Autenticación con Xray falló (${res.status}): ${await res.text()}`);
-  const token = (await res.json()) as string;
-  cached = { token, exp: Date.now() + 23 * 3600 * 1000 }; // el JWT dura ~24 h
-  return token;
+  return (await res.json()) as string;
+}
+
+export class InvalidCredentialsError extends Error {
+  constructor() { super("Credenciales de Xray inválidas."); }
+}
+
+// Lee el claim `exp` (segundos) del JWT sin verificar la firma: Xray la verifica en cada llamada.
+export function jwtExp(token: string): number | null {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
+    return typeof payload.exp === "number" ? payload.exp : null;
+  } catch {
+    return null;
+  }
 }
 
 interface GqlResponse<T> { data?: T; errors?: { message: string }[] }
 
 export async function gql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
-  const call = async (token: string) =>
-    fetch(`${BASE}/api/v2/graphql`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ query, variables }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  let res = await call(await getToken());
-  if (res.status === 401) { cached = null; res = await call(await getToken()); }
+  const token = requestToken.getStore();
+  if (!token) throw new Error("No hay token de Xray en el request.");
+  const res = await fetch(`${BASE}/api/v2/graphql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (res.status === 401) throw new Error("Xray rechazó el token (401). Reconectá el conector para renovarlo.");
   if (res.status === 429) throw new Error("Límite de peticiones de Xray alcanzado (429). Esperá unos segundos y reintentá.");
   if (!res.ok) throw new Error(`Xray respondió ${res.status}: ${await res.text()}`);
   const body = (await res.json()) as GqlResponse<T>;

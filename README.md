@@ -19,27 +19,33 @@ MCP remoto (Streamable HTTP, stateless) para manipular **Xray Cloud** desde Clau
 
 Todas aceptan **keys Jira** (`CSC-9920`); el servidor las convierte al `issueId` que exige Xray.
 
-## Variables de entorno
-- `XRAY_CLIENT_ID`, `XRAY_CLIENT_SECRET`: API Key de Xray.
-- `MCP_ACCESS_TOKEN`: mínimo 32 caracteres (`openssl rand -hex 32`).
-- `XRAY_BASE_URL` (opcional): región, p. ej. `https://eu.xray.cloud.getxray.app`.
+## Autenticación (sin secretos en el servidor)
+El servidor **no guarda credenciales de Xray**. Cada usuario carga su propia API Key de Xray como
+*OAuth Client ID / Client Secret* del conector. El servidor actúa como servidor OAuth mínimo:
+`/token` canjea esas credenciales contra Xray y devuelve el JWT de Xray (~24 h) como `access_token`;
+al vencer, Claude lo renueva con `refresh_token` reenviando las mismas credenciales. Nada se persiste.
+
+## Variables de entorno (todas opcionales)
+- `XRAY_BASE_URL`: región, p. ej. `https://eu.xray.cloud.getxray.app`.
+- `PUBLIC_URL`: URL pública, si no se deduce bien de la request.
+- `OAUTH_REDIRECT_URIS`: redirect URIs extra (coma). Ya se permiten las de claude.ai/claude.com y `http://localhost`.
 
 ## Local
 ```bash
 npm install
-cp .env.example .env   # completar valores
+cp .env.example .env
 npm run dev
-npx @modelcontextprotocol/inspector   # URL: http://localhost:3000/mcp/<TOKEN>
+npx @modelcontextprotocol/inspector   # URL: http://localhost:3000/mcp, auth OAuth con tu Client ID/Secret de Xray
 ```
 
 ## Despliegue en Railway
 1. Subir este repo a GitHub (privado) y crear un servicio desde el repo.
-2. En *Variables*, cargar `XRAY_CLIENT_ID`, `XRAY_CLIENT_SECRET` y `MCP_ACCESS_TOKEN`.
+2. No hace falta cargar variables (solo `XRAY_BASE_URL` si no usás la región global).
 3. Railway detecta Node, corre `npm run build` y `npm start`. Generar dominio público.
 
 ## Conectar en Claude
-*Settings → Connectors → Add custom connector*, URL:
-```
-https://<tu-dominio>.up.railway.app/mcp/<MCP_ACCESS_TOKEN>
-```
-El token en la URL es la protección: tratá esa URL como una contraseña. Para uso en equipo conviene migrar a OAuth.
+*Settings → Connectors → Add custom connector*:
+- URL: `https://<tu-dominio>.up.railway.app/mcp`
+- *Advanced settings* → **OAuth Client ID** = `client_id` de tu API Key de Xray, **OAuth Client Secret** = su `client_secret`.
+
+Luego *Connect*: Claude hace el flujo OAuth y queda conectado con tus permisos de Xray.
