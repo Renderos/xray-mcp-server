@@ -17,7 +17,10 @@ MCP remoto (Streamable HTTP, stateless) para manipular **Xray Cloud** desde Clau
 | `xray_update_step_status` | Estado por paso (por número o `step_id`) |
 | `xray_graphql` | Query/mutation libre (casos no cubiertos) |
 
-Todas aceptan **keys Jira** (`CSC-9920`); el servidor las convierte al `issueId` que exige Xray.
+Todas aceptan **keys Jira** (`CSC-9920`) de cualquier proyecto; el servidor las convierte al `issueId` que exige Xray.
+
+**Varias instancias de Jira:** la API Key de Xray pertenece a un sitio de Jira concreto, así que el mismo
+servidor sirve a cualquier instancia: cada conector usa la API Key del sitio al que tiene que apuntar.
 
 ## Autenticación (sin secretos en el servidor)
 El servidor **no guarda credenciales de Xray**. Cada usuario carga su propia API Key de Xray como
