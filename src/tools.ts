@@ -147,15 +147,18 @@ export function registerTools(server: McpServer): void {
     title: "Crear Test Execution",
     description: "Crea una Test Execution con los tests indicados y opcionalmente la vincula a un Test Plan.",
     inputSchema: {
-      project_key: z.string().default("CSC"), summary: z.string().min(1),
+      project_key: z.string().regex(/^[A-Za-z][A-Za-z0-9]+$/, "Formato esperado: PROYECTO").optional()
+        .describe("Proyecto Jira donde crearla. Por defecto, el del plan_key o el del primer test."),
+      summary: z.string().min(1),
       test_keys: keys("Tests a incluir"), plan_key: key("Test Plan a vincular").optional(),
     }, annotations: WRITE,
-  }, wrap(async (a: { project_key: string; summary: string; test_keys: string[]; plan_key?: string }) => {
+  }, wrap(async (a: { project_key?: string; summary: string; test_keys: string[]; plan_key?: string }) => {
+    const project = (a.project_key ?? (a.plan_key ?? a.test_keys[0]).split("-")[0]).toUpperCase();
     const tests = await resolveKeys(a.test_keys, "test");
     const d = await gql<{ createTestExecution: { testExecution: { issueId: string; jira: { key: string } }; warnings: string[] } }>(
       `mutation($t: [String], $jira: JSON!) { createTestExecution(testIssueIds: $t, jira: $jira) {
          testExecution { issueId jira(fields: ["key"]) } warnings } }`,
-      { t: [...tests.values()], jira: { fields: { summary: a.summary, project: { key: a.project_key } } } });
+      { t: [...tests.values()], jira: { fields: { summary: a.summary, project: { key: project } } } });
     const exec = d.createTestExecution.testExecution;
     if (a.plan_key) {
       await gql(`mutation($id: String!, $e: [String]!) { addTestExecutionsToTestPlan(issueId: $id, testExecIssueIds: $e) { addedTestExecutions warning } }`,
