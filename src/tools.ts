@@ -226,6 +226,6 @@ export function registerTools(server: McpServer): void {
   server.registerTool("xray_graphql", {
     title: "Consulta GraphQL directa",
     description: "Ejecuta una query o mutation GraphQL arbitraria contra Xray Cloud. Solo para casos no cubiertos por las otras herramientas.",
-    inputSchema: { query: z.string().min(5), variables: z.record(z.unknown()).optional() }, annotations: DESTRUCTIVE,
+    inputSchema: { query: z.string().min(5), variables: z.record(z.string(), z.unknown()).optional() }, annotations: DESTRUCTIVE,
   }, wrap(async ({ query, variables }: { query: string; variables?: Record<string, unknown> }) => gql(query, variables ?? {})));
 }
