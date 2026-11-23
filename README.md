@@ -42,7 +42,7 @@ npx @modelcontextprotocol/inspector   # URL: http://localhost:3000/mcp, auth OAu
 ```
 
 ## Despliegue en Railway
-1. Subir este repo a GitHub (privado) y crear un servicio desde el repo.
+1. Subir este repo a GitHub (o hacer un fork) y crear un servicio desde el repo.
 2. No hace falta cargar variables (solo `XRAY_BASE_URL` si no usás la región global).
 3. Railway detecta Node, corre `npm run build` y `npm start`. Generar dominio público.
 
@@ -52,3 +52,6 @@ npx @modelcontextprotocol/inspector   # URL: http://localhost:3000/mcp, auth OAu
 - *Advanced settings* → **OAuth Client ID** = `client_id` de tu API Key de Xray, **OAuth Client Secret** = su `client_secret`.
 
 Luego *Connect*: Claude hace el flujo OAuth y queda conectado con tus permisos de Xray.
+
+## Licencia
+[MIT](LICENSE)
